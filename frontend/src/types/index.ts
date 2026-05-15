@@ -232,3 +232,34 @@ export type ImageValidationBatchResult = {
 	results: ImageValidationBatchItem[]
 	summary: string
 }
+
+export type ResearchPaper = {
+	title: string
+	authors: string[]
+	published: string
+	arxiv_id: string
+	url: string
+	summary: string
+}
+
+export type ResearchDigestQueryRequest = {
+	query: string
+	max_results?: number
+	max_summary_length?: number
+	thread_id?: string
+}
+
+export type ResearchDigestResponse = {
+	query: string
+	papers_found: number
+	digest: string
+	papers: ResearchPaper[]
+	thread_id?: string | null
+}
+
+export type ResearchDigestStreamEvent =
+	| { type: 'status'; stage: string; message: string }
+	| { type: 'token'; content: string }
+	| { type: 'final'; result: ResearchDigestResponse }
+	| { type: 'done' }
+	| { type: 'error'; message: string }

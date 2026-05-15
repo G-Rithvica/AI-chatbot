@@ -17,6 +17,9 @@ import type {
   DatabaseQueryResponse,
   SpreadsheetQueryRequest,
   SpreadsheetQueryResponse,
+  ResearchDigestQueryRequest,
+  ResearchDigestResponse,
+  ResearchDigestStreamEvent,
   StreamEvent,
   Thread,
   ThreadListResponse,
@@ -116,11 +119,58 @@ async function streamChat(
   }
 }
 
+async function streamResearchDigest(
+  body: ResearchDigestQueryRequest,
+  onEvent: (event: ResearchDigestStreamEvent) => void,
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/project10/research-digest/stream`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  })
+
+  if (!response.ok || !response.body) {
+    throw new Error(`Request failed with status ${response.status}`)
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) {
+      break
+    }
+
+    buffer += decoder.decode(value, { stream: true })
+    const events = buffer.split('\n\n')
+    buffer = events.pop() ?? ''
+
+    for (const event of events) {
+      if (!event.startsWith('data: ')) {
+        continue
+      }
+
+      const payload = event.slice(6)
+      const parsed = JSON.parse(payload) as ResearchDigestStreamEvent
+      onEvent(parsed)
+      if (parsed.type === 'error') {
+        throw new Error(parsed.message)
+      }
+    }
+  }
+}
+
 export const api = {
   getCurrentUser: () => request<AuthStatus>('/api/auth/me'),
   logout: () => request<void>('/api/auth/logout', { method: 'POST' }),
   getChatHistory: (threadId: string) => request<ChatHistoryResponse>(`/api/chat/history?thread_id=${encodeURIComponent(threadId)}`),
   streamChat,
+  streamResearchDigest,
   emailLogin: (body: LoginRequest) =>
     request<User>('/api/auth/login', { method: 'POST', body }),
   emailRegister: (body: RegisterRequest) =>
@@ -157,4 +207,6 @@ export const api = {
     request<DatabaseQueryResponse>('/api/database/query', { method: 'POST', body }),
   spreadsheetQuery: (body: SpreadsheetQueryRequest) =>
     request<SpreadsheetQueryResponse>('/api/database/spreadsheet/query', { method: 'POST', body }),
+  researchDigestQuery: (body: ResearchDigestQueryRequest) =>
+    request<ResearchDigestResponse>('/api/project10/research-digest/query', { method: 'POST', body }),
 }

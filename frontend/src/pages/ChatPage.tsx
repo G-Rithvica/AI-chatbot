@@ -8,7 +8,7 @@ import { ChatSidebar } from '../components/chat/ChatSidebar'
 import { GeneratedImageBubble, MessageBubble, MessageContentRenderer, TypingBubble } from '../components/chat/MessageBubble'
 import { api } from '../lib/api'
 import { deriveImageGenerationOptions, isImageGenerationPrompt, isImageValidationPrompt } from '../lib/messageHelpers'
-import type { Attachment, ChatMessage, DatabaseConnectionInput, DatabaseQueryResponse, SpreadsheetQueryResponse, Thread } from '../types'
+import type { Attachment, ChatMessage, DatabaseConnectionInput, DatabaseQueryResponse, ResearchDigestResponse, SpreadsheetQueryResponse, Thread } from '../types'
 
 const DRAFT_STORAGE_PREFIX = 'chat:draft:'
 
@@ -60,6 +60,34 @@ function formatSpreadsheetResult(result: SpreadsheetQueryResponse): string {
   return lines.join('\n')
 }
 
+function formatResearchDigestResult(result: ResearchDigestResponse): string {
+  const lines: string[] = [
+    '### Research Digest',
+    `Query: ${result.query}`,
+    `Papers Found: ${result.papers_found}`,
+    '',
+    '**Digest:**',
+    result.digest,
+    '',
+    '**Papers:**',
+  ]
+
+  for (let i = 0; i < Math.min(result.papers.length, 10); i++) {
+    const paper = result.papers[i]
+    lines.push(`${i + 1}. [${paper.title}](${paper.url})`)
+    if (paper.authors.length) {
+      lines.push(`   Authors: ${paper.authors.slice(0, 3).join(', ')}`)
+    }
+    lines.push(`   Published: ${paper.published}`)
+  }
+
+  if (result.papers.length > 10) {
+    lines.push(`... and ${result.papers.length - 10} more papers`)
+  }
+
+  return lines.join('\n')
+}
+
 export default function ChatPage() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
@@ -83,6 +111,8 @@ export default function ChatPage() {
   const [tabularSourceLabel, setTabularSourceLabel] = useState<string | null>(null)
   const [tabularGSheetUrl, setTabularGSheetUrl] = useState('')
   const [tabularPanelOpen, setTabularPanelOpen] = useState(false)
+  const [researchQuery, setResearchQuery] = useState('')
+  const [researchPanelOpen, setResearchPanelOpen] = useState(false)
   const [manualDatabaseConnection, setManualDatabaseConnection] = useState<DatabaseConnectionInput>({
     db_type: 'postgresql',
     host: '',
@@ -98,6 +128,7 @@ export default function ChatPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const tabularFileInputRef = useRef<HTMLInputElement>(null)
   const tabularPanelRef = useRef<HTMLDivElement>(null)
+  const researchPanelRef = useRef<HTMLDivElement>(null)
   const currentThreadIdRef = useRef<string | null>(null)
 
   // ── Threads ──────────────────────────────────────────────────────────────
@@ -301,6 +332,8 @@ export default function ChatPage() {
     setTabularSourceLabel(null)
     setTabularGSheetUrl('')
     setTabularPanelOpen(false)
+    setResearchQuery('')
+    setResearchPanelOpen(false)
   }, [currentThreadId])
 
   useEffect(() => {
@@ -317,6 +350,21 @@ export default function ChatPage() {
       document.removeEventListener('mousedown', handleOutsideClick)
     }
   }, [tabularPanelOpen])
+
+  useEffect(() => {
+    if (!researchPanelOpen) return
+
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (!researchPanelRef.current?.contains(event.target as Node)) {
+        setResearchPanelOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleOutsideClick)
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick)
+    }
+  }, [researchPanelOpen])
 
   useEffect(() => {
     setDatabaseConnected(false)
@@ -524,6 +572,83 @@ export default function ChatPage() {
     setError(null)
   }
 
+  const handleResearchDigest = async () => {
+    const query = researchQuery.trim()
+    if (!query || !currentThreadId || sending) return
+
+    setError(null)
+    setSending(true)
+    setStreamingText('')
+
+    await queryClient.setQueryData(
+      ['chat', 'history', currentThreadId],
+      (old: { messages: ChatMessage[] } | undefined) => {
+        const optimistic: ChatMessage = {
+          id: crypto.randomUUID(),
+          role: 'user',
+          content: `Research: ${query}`,
+          created_at: new Date().toISOString(),
+        }
+        return { messages: [...(old?.messages ?? []), optimistic] }
+      },
+    )
+
+    let finalResult: ResearchDigestResponse | null = null
+    try {
+      await api.streamResearchDigest(
+        {
+          query,
+          max_results: 15,
+          max_summary_length: 1000,
+          thread_id: currentThreadId,
+        },
+        (event) => {
+          if (event.type === 'status') {
+            setStreamingText((current) => `${current}${current ? '\n' : ''}[${event.stage}] ${event.message}`)
+            return
+          }
+          if (event.type === 'token') {
+            setStreamingText((current) => `${current}${event.content}`)
+            return
+          }
+          if (event.type === 'final') {
+            finalResult = event.result
+          }
+        },
+      )
+
+      if (!finalResult) {
+        throw new Error('Research digest stream ended without a final result.')
+      }
+
+      const assistantMessage: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: formatResearchDigestResult(finalResult),
+        created_at: new Date().toISOString(),
+      }
+
+      await queryClient.setQueryData(
+        ['chat', 'history', currentThreadId],
+        (old: { messages: ChatMessage[]; generated_images?: unknown[] } | undefined) => ({
+          messages: [...(old?.messages ?? []), assistantMessage],
+          generated_images: old?.generated_images ?? [],
+        }),
+      )
+
+      setResearchQuery('')
+      setResearchPanelOpen(false)
+      setSelectedAttachmentIds([])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate research digest.')
+    } finally {
+      setSending(false)
+      setStreamingText('')
+      await queryClient.invalidateQueries({ queryKey: ['chat', 'history', currentThreadId] })
+      queryClient.invalidateQueries({ queryKey: ['threads'] })
+    }
+  }
+
   const handleAttachmentPick = async (files: FileList | null) => {
     if (!files || !currentThreadId || files.length === 0) return
 
@@ -539,7 +664,7 @@ export default function ChatPage() {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      handleSend()
+      void handleSend()
     }
   }
 
@@ -833,6 +958,14 @@ export default function ChatPage() {
                 >
                   ▦
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setResearchPanelOpen((current) => !current)}
+                  className={`ui-btn-secondary shrink-0 px-3 py-3 text-xs font-semibold ${researchQuery ? 'border-emerald-400/70 text-emerald-100' : ''}`}
+                  title="Research Digest (arXiv)"
+                >
+                  🔬
+                </button>
 
                 {tabularPanelOpen && (
                   <div className="ui-surface-accent absolute bottom-full left-0 z-20 mb-2 w-72 px-3 py-3 shadow-2xl">
@@ -871,6 +1004,39 @@ export default function ChatPage() {
                       </label>
                       <p className="truncate text-[11px] text-slate-400">
                         Source: {tabularSourceLabel ?? 'None selected'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {researchPanelOpen && (
+                  <div
+                    ref={researchPanelRef}
+                    className="ui-surface-accent absolute bottom-full left-0 z-20 mb-2 w-72 px-3 py-3 shadow-2xl"
+                  >
+                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-blue-200/80">Research Digest (arXiv)</p>
+                    <div className="space-y-2">
+                      <input
+                        value={researchQuery}
+                        onChange={(e) => setResearchQuery(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            void handleResearchDigest()
+                          }
+                        }}
+                        placeholder="Research topic or keywords"
+                        className="ui-input px-2.5 py-1.5 text-xs w-full"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void handleResearchDigest()}
+                        disabled={sending || !researchQuery.trim()}
+                        className="ui-btn-secondary w-full rounded-lg px-3 py-2 text-xs font-medium disabled:opacity-50"
+                      >
+                        {sending ? 'Searching…' : 'Search & Digest'}
+                      </button>
+                      <p className="text-[11px] text-slate-400">
+                        Searches arXiv for papers and generates a structured research digest.
                       </p>
                     </div>
                   </div>

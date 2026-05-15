@@ -28,6 +28,7 @@ openpyxl
 tabulate
 gspread
 google-auth
+arxiv
 pytest
 pytest-asyncio
 ruff

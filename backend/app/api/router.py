@@ -10,6 +10,7 @@ from next_projects.project6_image_generation.router import router as project6_ro
 from next_projects.project7_rag.router import router as project7_router
 from next_projects.project8_data_qa.router import router as project8_router
 from next_projects.project9_sheets_query_agent.router import router as project9_router
+from next_projects.project10_research_digest.router import router as project10_router
 
 api_router = APIRouter()
 api_router.include_router(auth_router, prefix='/auth', tags=['auth'])
@@ -22,3 +23,4 @@ api_router.include_router(project6_router)
 api_router.include_router(project7_router)
 api_router.include_router(project8_router)
 api_router.include_router(project9_router)
+api_router.include_router(project10_router)
