@@ -27,3 +27,10 @@ class Thread(Base):
 
     user = relationship('User', back_populates='threads')
     messages = relationship('Message', back_populates='thread', cascade='all, delete-orphan', order_by='Message.created_at')
+    attachments = relationship('Attachment', back_populates='thread', cascade='all, delete-orphan', order_by='Attachment.created_at')
+    generated_images = relationship(
+        'GeneratedImage',
+        back_populates='thread',
+        cascade='all, delete-orphan',
+        order_by='GeneratedImage.created_at',
+    )

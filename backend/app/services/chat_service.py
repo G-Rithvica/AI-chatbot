@@ -1,16 +1,38 @@
 import json
 from collections.abc import AsyncGenerator
+from typing import Any
 
-from openai import OpenAIError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.llm import get_async_openai_client
+from app.ai.chains import stream_chain_tokens
+from app.ai.memory import build_memory_window
 from app.core.config import get_settings
 from app.models.message import Message
 from app.models.user import User
 
 settings = get_settings()
+
+
+def _extract_forced_attachment_heading(attachment_context: str | None, prompt: str) -> str | None:
+    if not attachment_context:
+        return None
+
+    prompt_lower = prompt.lower()
+    if not any(keyword in prompt_lower for keyword in ('title', 'heading', 'name')):
+        return None
+
+    marker = 'Exact matched heading for the requested section:'
+    marker_index = attachment_context.find(marker)
+    if marker_index < 0:
+        return None
+
+    remainder = attachment_context[marker_index + len(marker):].strip()
+    if not remainder:
+        return None
+
+    heading = remainder.splitlines()[0].strip()
+    return heading or None
 
 
 async def save_message(db: AsyncSession, user_id: str, role: str, content: str, thread_id: str | None = None) -> Message:
@@ -35,12 +57,30 @@ async def stream_chat_response(
     user: User,
     prompt: str,
     thread_id: str | None = None,
+    attachment_context: str | None = None,
+    attachment_label: str | None = None,
+    attachment_image_inputs: list[dict[str, Any]] | None = None,
 ) -> AsyncGenerator[str, None]:
     if not settings.llm_model:
         yield _sse_error('LLM_MODEL is not configured.')
         return
 
-    await save_message(db, user.id, 'user', prompt, thread_id)
+    prompt_for_storage = prompt
+    if attachment_label:
+        prompt_for_storage = f"{prompt}\n\n[Attached files: {attachment_label}]"
+
+    await save_message(db, user.id, 'user', prompt_for_storage, thread_id)
+
+    forced_heading = _extract_forced_attachment_heading(attachment_context, prompt)
+    if forced_heading:
+        response_for_storage = forced_heading
+        if attachment_label:
+            response_for_storage = f"{response_for_storage}\n\n[Used files: {attachment_label}]"
+
+        await save_message(db, user.id, 'assistant', response_for_storage, thread_id)
+        yield _sse_data({'type': 'token', 'content': forced_heading})
+        yield _sse_data({'type': 'done'})
+        return
 
     # Auto-name thread on first message
     if thread_id:
@@ -53,46 +93,45 @@ async def stream_chat_response(
             await auto_name_thread(db, thread, prompt)
 
     history = await get_message_history(db, user.id, limit=20, thread_id=thread_id)
-    messages = [
+    history_messages = [
         {'role': message.role, 'content': message.content}
         for message in history
         if message.role in {'system', 'user', 'assistant'}
     ]
 
-    if not messages or messages[-1]['role'] != 'user':
-        messages.append({'role': 'user', 'content': prompt})
+    if not history_messages or history_messages[-1]['role'] != 'user':
+        history_messages.append({'role': 'user', 'content': prompt})
+
+    if history_messages and history_messages[-1]['role'] == 'user':
+        user_text = history_messages[-1]['content']
+        if attachment_context:
+            user_text = f"{user_text}\n\n{attachment_context}"
+
+        if attachment_image_inputs:
+            history_messages[-1]['content'] = [
+                {'type': 'text', 'text': user_text},
+                *attachment_image_inputs,
+            ]
+        else:
+            history_messages[-1]['content'] = user_text
+
+    messages = build_memory_window(history_messages, max_previous_conversations=5)
 
     assistant_parts: list[str] = []
 
     try:
-        client = get_async_openai_client()
-        stream = await client.chat.completions.create(
-            model=settings.llm_model,
-            messages=messages,
-            stream=True,
-            user=user.email,
-            extra_body={
-                'metadata': {
-                    'application': settings.app_name,
-                    'environment': settings.environment,
-                }
-            },
-        )
-
-        async for chunk in stream:
-            delta = chunk.choices[0].delta.content if chunk.choices else None
-            if not delta:
-                continue
-            assistant_parts.append(delta)
-            yield _sse_data({'type': 'token', 'content': delta})
+        async for token in stream_chain_tokens(messages, user_email=user.email):
+            assistant_parts.append(token)
+            yield _sse_data({'type': 'token', 'content': token})
 
         full_response = ''.join(assistant_parts).strip()
         if full_response:
-            await save_message(db, user.id, 'assistant', full_response, thread_id)
+            response_for_storage = full_response
+            if attachment_label:
+                response_for_storage = f"{response_for_storage}\n\n[Used files: {attachment_label}]"
+            await save_message(db, user.id, 'assistant', response_for_storage, thread_id)
 
         yield _sse_data({'type': 'done'})
-    except OpenAIError as exc:
-        yield _sse_error(str(exc))
     except Exception as exc:  # noqa: BLE001
         yield _sse_error(str(exc))
 

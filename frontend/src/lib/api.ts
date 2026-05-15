@@ -1,6 +1,31 @@
-import type { AuthStatus, ChatHistoryResponse, LoginRequest, RegisterRequest, StreamEvent, Thread, ThreadListResponse, User } from '../types'
+import type {
+  Attachment,
+  AttachmentListResponse,
+  AuthStatus,
+  ChatHistoryResponse,
+  ImageGenerationRequest,
+  ImageGenerationResponse,
+  ImageValidationBatchRequest,
+  ImageValidationBatchResult,
+  ImageValidationRequest,
+  ImageValidationResponse,
+  LoginRequest,
+  RegisterRequest,
+  DatabaseConnectRequest,
+  DatabaseConnectResponse,
+  DatabaseQueryRequest,
+  DatabaseQueryResponse,
+  SpreadsheetQueryRequest,
+  SpreadsheetQueryResponse,
+  StreamEvent,
+  Thread,
+  ThreadListResponse,
+  User,
+} from '../types'
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
+const runtimeHost = typeof window !== 'undefined' ? window.location.hostname : 'localhost'
+const defaultApiHost = runtimeHost === '127.0.0.1' ? '127.0.0.1' : 'localhost'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? `http://${defaultApiHost}:8000`
 
 type RequestOptions = Omit<RequestInit, 'body'> & {
   body?: BodyInit | Record<string, unknown> | null
@@ -41,14 +66,19 @@ export const apiClient = {
   request,
 }
 
-async function streamChat(message: string, threadId: string, onToken: (token: string) => void): Promise<void> {
+async function streamChat(
+  message: string,
+  threadId: string,
+  attachmentIds: string[] | undefined,
+  onToken: (token: string) => void,
+): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
     method: 'POST',
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ message, thread_id: threadId }),
+    body: JSON.stringify({ message, thread_id: threadId, attachment_ids: attachmentIds && attachmentIds.length ? attachmentIds : undefined }),
   })
 
   if (!response.ok || !response.body) {
@@ -102,4 +132,29 @@ export const api = {
     request<Thread>(`/api/threads/${encodeURIComponent(threadId)}`, { method: 'PATCH', body: { name } }),
   deleteThread: (threadId: string) =>
     request<void>(`/api/threads/${encodeURIComponent(threadId)}`, { method: 'DELETE' }),
+  // Attachment endpoints
+  getAttachments: (threadId: string) =>
+    request<AttachmentListResponse>(`/api/attachments?thread_id=${encodeURIComponent(threadId)}`),
+  uploadAttachment: async (threadId: string, file: File): Promise<Attachment> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return request<Attachment>(`/api/attachments/upload?thread_id=${encodeURIComponent(threadId)}`, {
+      method: 'POST',
+      body: formData,
+    })
+  },
+  deleteAttachment: (attachmentId: string) =>
+    request<void>(`/api/attachments/${encodeURIComponent(attachmentId)}`, { method: 'DELETE' }),
+  generateImage: (body: ImageGenerationRequest) =>
+    request<ImageGenerationResponse>('/api/image-generation/generate', { method: 'POST', body }),
+  validateImage: (body: ImageValidationRequest) =>
+    request<ImageValidationResponse>('/api/project8/data-qa/image-validation/validate', { method: 'POST', body }),
+  validateImagesBatch: (body: ImageValidationBatchRequest) =>
+    request<ImageValidationBatchResult>('/api/project8/data-qa/image-validation/validate-batch', { method: 'POST', body }),
+  databaseConnect: (body: DatabaseConnectRequest) =>
+    request<DatabaseConnectResponse>('/api/database/connect', { method: 'POST', body }),
+  databaseQuery: (body: DatabaseQueryRequest) =>
+    request<DatabaseQueryResponse>('/api/database/query', { method: 'POST', body }),
+  spreadsheetQuery: (body: SpreadsheetQueryRequest) =>
+    request<SpreadsheetQueryResponse>('/api/database/spreadsheet/query', { method: 'POST', body }),
 }

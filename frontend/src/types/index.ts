@@ -28,8 +28,95 @@ export type ChatMessage = {
 	created_at: string
 }
 
+export type GeneratedImage = {
+	id: string
+	thread_id: string
+	prompt: string
+	revised_prompt: string | null
+	mime_type: string
+	image_base64: string
+	created_at: string
+}
+
 export type ChatHistoryResponse = {
 	messages: ChatMessage[]
+	generated_images: GeneratedImage[]
+}
+
+export type Attachment = {
+	id: string
+	file_name: string
+	mime_type: string
+	size_bytes: number
+	kind: 'image' | 'video' | 'table' | 'formula' | 'code' | 'file'
+	url: string
+	created_at: string
+}
+
+export type AttachmentListResponse = {
+	attachments: Attachment[]
+}
+
+export type ImageGenerationRequest = {
+	prompt: string
+	thread_id?: string
+	size?: string
+	style?: string
+	response_format?: 'b64_json' | 'url'
+}
+
+export type ImageGenerationResponse = {
+	mime_type: string
+	image_base64: string
+	revised_prompt: string | null
+}
+
+export type ImageValidationRuleInput = {
+	rule_id: string
+	description?: string
+	field_path: string
+	operator: string
+	expected?: unknown
+	required?: boolean
+}
+
+export type ImageValidationRequest = {
+	image_id: string
+	thread_id?: string
+	note?: string
+	include_default_rules?: boolean
+	rules?: ImageValidationRuleInput[]
+}
+
+export type ImageValidationRuleResult = {
+	rule_id: string
+	description: string
+	operator: string
+	expected: unknown
+	extracted: unknown
+	passed: boolean
+	required: boolean
+	message: string
+}
+
+export type ImageValidationExtractedData = {
+	metadata: Record<string, unknown>
+	text: string
+	labels: string[]
+	fields: Record<string, string>
+}
+
+export type ImageValidationResponse = {
+	image_id: string
+	source_name: string
+	source_type: string
+	source_thread_id: string | null
+	extracted_data: ImageValidationExtractedData
+	passed: boolean
+	failed_rules: ImageValidationRuleResult[]
+	rule_results: ImageValidationRuleResult[]
+	summary: string
+	chat_summary: string
 }
 
 export type StreamEvent =
@@ -46,4 +133,102 @@ export type RegisterRequest = {
 	email: string
 	password: string
 	name?: string
+}
+
+export type SupportedDatabaseType = 'mysql' | 'postgresql' | 'sqlite' | 'supabase'
+
+export type DatabaseConnectionInput = {
+	db_type?: SupportedDatabaseType
+	host?: string
+	port?: number
+	database?: string
+	username?: string
+	password?: string
+	schema?: string
+	sqlite_path?: string
+	url?: string
+	ssl_required?: boolean
+}
+
+export type DatabaseTableColumn = {
+	name: string
+	data_type: string
+}
+
+export type DatabaseTableSchema = {
+	name: string
+	columns: DatabaseTableColumn[]
+}
+
+export type DatabaseConnectRequest = {
+	connection?: DatabaseConnectionInput
+}
+
+export type DatabaseConnectResponse = {
+	connected: boolean
+	message: string
+	db_type?: string | null
+	database?: string | null
+	schema?: string | null
+	tables: DatabaseTableSchema[]
+	schema_summary?: string | null
+}
+
+export type DatabaseQueryRequest = {
+	question: string
+	max_rows?: number
+	thread_id?: string
+	connection?: DatabaseConnectionInput
+}
+
+export type DatabaseQueryResponse = {
+	detected_intent: string
+	allowed: boolean
+	message: string
+	sql?: string | null
+	explanation?: string | null
+	columns: string[]
+	rows: Record<string, unknown>[]
+	row_count: number
+	formatted_table?: string | null
+}
+
+export type SpreadsheetQueryRequest = {
+	source_id: string
+	question: string
+	sheet_name?: string
+	max_rows?: number
+	thread_id?: string
+}
+
+export type SpreadsheetQueryResponse = {
+	source_type: string
+	allowed: boolean
+	message: string
+	answer: string
+	columns: string[]
+	rows_considered: number
+	thread_id?: string | null
+}
+
+export type ImageValidationBatchRequest = {
+	image_ids: string[]
+	include_default_rules?: boolean
+	rules?: ImageValidationRuleInput[]
+}
+
+export type ImageValidationBatchItem = {
+	image_id: string
+	success: boolean
+	result: ImageValidationResponse | null
+	error: string | null
+}
+
+export type ImageValidationBatchResult = {
+	total_images: number
+	processed_images: number
+	passed_images: number
+	failed_images: number
+	results: ImageValidationBatchItem[]
+	summary: string
 }

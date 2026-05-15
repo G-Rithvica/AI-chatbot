@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 
 import { ProtectedRoute } from './components/auth/ProtectedRoute'
 import ChatPage from './pages/ChatPage'
+import ImageRulePage from './pages/ImageRulePage'
 import LoginPage from './pages/LoginPage'
 
 function App() {
@@ -13,6 +14,14 @@ function App() {
         element={
           <ProtectedRoute>
             <ChatPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/image-rules"
+        element={
+          <ProtectedRoute>
+            <ImageRulePage />
           </ProtectedRoute>
         }
       />

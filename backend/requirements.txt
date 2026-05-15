@@ -6,7 +6,9 @@ sqlalchemy
 alembic
 asyncpg
 psycopg2-binary
+pymysql
 langchain
+langchain-experimental
 langchain-openai
 langgraph
 chromadb
@@ -20,8 +22,10 @@ python-multipart
 email-validator
 filetype
 pypdf
+opencv-python-headless
 pandas
 openpyxl
+tabulate
 gspread
 google-auth
 pytest

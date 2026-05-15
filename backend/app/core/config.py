@@ -56,6 +56,17 @@ class Settings(BaseSettings):
 
     frontend_url: str = 'http://localhost:5173'
 
+    db_type: str | None = None
+    db_host: str | None = None
+    db_port: int | None = None
+    db_name: str | None = None
+    db_user: str | None = None
+    db_password: str | None = None
+    db_schema: str | None = None
+    db_url: str | None = None
+    db_query_timeout_seconds: int = 15
+    db_max_rows: int = 100
+
     @property
     def cookie_secure(self) -> bool:
         return self.environment.lower() not in {'development', 'dev', 'local'}

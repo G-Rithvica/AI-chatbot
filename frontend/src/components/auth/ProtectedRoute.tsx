@@ -12,8 +12,8 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
 
   if (isLoading) {
     return (
-      <main className="grid min-h-screen place-items-center bg-stone-950 text-stone-200">
-        <p>Checking session...</p>
+      <main className="app-shell grid min-h-screen place-items-center px-4">
+        <div className="ui-surface-accent px-6 py-4 text-sm text-slate-200">Checking session...</div>
       </main>
     )
   }

@@ -1,0 +1,42 @@
+{
+  "name": "AI Chatbot Agent Stub",
+  "nodes": [
+    {
+      "id": "1",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [260, 260]
+    },
+    {
+      "id": "2",
+      "name": "Set Demo Payload",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [520, 260],
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "message",
+              "value": "Agent stub executed"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set Demo Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

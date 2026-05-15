@@ -1,10 +1,22 @@
 from fastapi import Cookie, Depends, HTTPException
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import AuthError, decode_access_token
 from app.db.session import get_db
 from app.models.user import User
 from app.services.auth_service import get_user_by_id
+
+
+async def _get_user_with_retry(db: AsyncSession, user_id: str) -> User | None:
+    for attempt in range(2):
+        try:
+            return await get_user_by_id(db, user_id)
+        except SQLAlchemyError:
+            await db.rollback()
+            if attempt == 1:
+                raise
+    return None
 
 
 async def get_current_user(
@@ -32,7 +44,14 @@ async def get_current_user(
             detail={'error': 'invalid_token', 'message': 'Token subject is invalid.'},
         )
 
-    user = await get_user_by_id(db, user_id)
+    try:
+        user = await _get_user_with_retry(db, user_id)
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={'error': 'database_unavailable', 'message': 'Database connection was interrupted. Please retry.'},
+        ) from exc
+
     if user is None:
         raise HTTPException(
             status_code=401,

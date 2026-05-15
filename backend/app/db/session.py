@@ -2,6 +2,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import get_settings
+from app.models.attachment import Attachment
+from app.models.generated_image import GeneratedImage
 from app.models.base import Base
 from app.models.message import Message
 from app.models.thread import Thread
@@ -12,13 +14,24 @@ settings = get_settings()
 if not settings.async_database_url:
     raise RuntimeError('DATABASE_URL is required to initialize the database engine.')
 
-engine = create_async_engine(settings.async_database_url, echo=False)
+engine = create_async_engine(
+    settings.async_database_url,
+    echo=False,
+    pool_pre_ping=True,
+    pool_recycle=300,
+    pool_use_lifo=True,
+)
 AsyncSessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
 
 
 async def get_db():
     async with AsyncSessionLocal() as session:
-        yield session
+        try:
+            yield session
+        except Exception:  # noqa: BLE001
+            # Reset broken transactions before returning session to the pool.
+            await session.rollback()
+            raise
 
 
 async def init_db() -> None:
