@@ -5,10 +5,23 @@ import { useNavigate } from 'react-router-dom'
 import { AutoResizeTextarea } from '../components/chat/AutoResizeTextarea'
 import { AttachmentPanel } from '../components/chat/AttachmentPanel'
 import { ChatSidebar } from '../components/chat/ChatSidebar'
+import { TopWorkspaceBar } from '../components/layout/TopWorkspaceBar'
+import { CommandPalette } from '../components/ui/CommandPalette'
 import { GeneratedImageBubble, MessageBubble, MessageContentRenderer, TypingBubble } from '../components/chat/MessageBubble'
-import { api } from '../lib/api'
+import { SkeletonBlock, StateBlock } from '../components/ui/StateBlock'
+import { useTheme } from '../hooks/useTheme'
+import { api, streamMcpResearch } from '../lib/api'
 import { deriveImageGenerationOptions, isImageGenerationPrompt, isImageValidationPrompt } from '../lib/messageHelpers'
-import type { Attachment, ChatMessage, DatabaseConnectionInput, DatabaseQueryResponse, ResearchDigestResponse, SpreadsheetQueryResponse, Thread } from '../types'
+import type {
+  Attachment,
+  ChatMessage,
+  DatabaseConnectionInput,
+  DatabaseQueryResponse,
+  McpResearchResponse,
+  ResearchDigestResponse,
+  SpreadsheetQueryResponse,
+  Thread,
+} from '../types'
 
 const DRAFT_STORAGE_PREFIX = 'chat:draft:'
 
@@ -60,9 +73,11 @@ function formatSpreadsheetResult(result: SpreadsheetQueryResponse): string {
   return lines.join('\n')
 }
 
-function formatResearchDigestResult(result: ResearchDigestResponse): string {
+function formatResearchDigestResult(result: ResearchDigestResponse | McpResearchResponse): string {
+  const source = 'agent_source' in result ? result.agent_source : 'project10'
   const lines: string[] = [
     '### Research Digest',
+    `Agent: ${source}`,
     `Query: ${result.query}`,
     `Papers Found: ${result.papers_found}`,
     '',
@@ -72,7 +87,7 @@ function formatResearchDigestResult(result: ResearchDigestResponse): string {
     '**Papers:**',
   ]
 
-  for (let i = 0; i < Math.min(result.papers.length, 10); i++) {
+  for (let i = 0; i < result.papers.length; i++) {
     const paper = result.papers[i]
     lines.push(`${i + 1}. [${paper.title}](${paper.url})`)
     if (paper.authors.length) {
@@ -81,16 +96,13 @@ function formatResearchDigestResult(result: ResearchDigestResponse): string {
     lines.push(`   Published: ${paper.published}`)
   }
 
-  if (result.papers.length > 10) {
-    lines.push(`... and ${result.papers.length - 10} more papers`)
-  }
-
   return lines.join('\n')
 }
 
 export default function ChatPage() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const { theme, toggleTheme } = useTheme()
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   // State
@@ -111,8 +123,11 @@ export default function ChatPage() {
   const [tabularSourceLabel, setTabularSourceLabel] = useState<string | null>(null)
   const [tabularGSheetUrl, setTabularGSheetUrl] = useState('')
   const [tabularPanelOpen, setTabularPanelOpen] = useState(false)
-  const [researchQuery, setResearchQuery] = useState('')
-  const [researchPanelOpen, setResearchPanelOpen] = useState(false)
+  const [researchModeEnabled, setResearchModeEnabled] = useState(false)
+  const [researchAgent, setResearchAgent] = useState<'project10' | 'project12'>('project10')
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [commandOpen, setCommandOpen] = useState(false)
+  const [commandSearch, setCommandSearch] = useState('')
   const [manualDatabaseConnection, setManualDatabaseConnection] = useState<DatabaseConnectionInput>({
     db_type: 'postgresql',
     host: '',
@@ -128,7 +143,6 @@ export default function ChatPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const tabularFileInputRef = useRef<HTMLInputElement>(null)
   const tabularPanelRef = useRef<HTMLDivElement>(null)
-  const researchPanelRef = useRef<HTMLDivElement>(null)
   const currentThreadIdRef = useRef<string | null>(null)
 
   // ── Threads ──────────────────────────────────────────────────────────────
@@ -152,6 +166,20 @@ export default function ChatPage() {
   useEffect(() => {
     currentThreadIdRef.current = currentThreadId
   }, [currentThreadId])
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setCommandOpen(true)
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [])
 
   // ── Messages ─────────────────────────────────────────────────────────────
   const historyQuery = useQuery({
@@ -321,6 +349,56 @@ export default function ChatPage() {
     },
   })
 
+  const commands = useMemo(() => {
+    return [
+      {
+        id: 'new-chat',
+        label: 'Create New Chat',
+        hint: 'Ctrl + K',
+        onTrigger: () => createThreadMutation.mutate(),
+      },
+      {
+        id: 'toggle-db',
+        label: databaseModeEnabled ? 'Disable Database Mode' : 'Enable Database Mode',
+        onTrigger: () => setDatabaseModeEnabled((value) => !value),
+      },
+      {
+        id: 'toggle-tabular',
+        label: tabularModeEnabled ? 'Disable Spreadsheet Mode' : 'Enable Spreadsheet Mode',
+        onTrigger: () => setTabularModeEnabled((value) => !value),
+      },
+      {
+        id: 'open-research',
+        label: researchModeEnabled ? 'Disable Research Agent Mode' : 'Enable Research Agent Mode',
+        onTrigger: () => setResearchModeEnabled((value) => !value),
+      },
+      {
+        id: 'go-image-rules',
+        label: 'Open Image Rule Checker',
+        onTrigger: () => navigate('/image-rules'),
+      },
+      {
+        id: 'theme',
+        label: theme === 'dark' ? 'Switch to Light Theme' : 'Switch to Dark Theme',
+        onTrigger: toggleTheme,
+      },
+      {
+        id: 'logout',
+        label: 'Logout',
+        onTrigger: () => logoutMutation.mutate(),
+      },
+    ]
+  }, [
+    createThreadMutation,
+    databaseModeEnabled,
+    logoutMutation,
+    navigate,
+    researchModeEnabled,
+    tabularModeEnabled,
+    theme,
+    toggleTheme,
+  ])
+
   // Effects
   useEffect(() => {
     setSelectedAttachmentIds([])
@@ -332,8 +410,8 @@ export default function ChatPage() {
     setTabularSourceLabel(null)
     setTabularGSheetUrl('')
     setTabularPanelOpen(false)
-    setResearchQuery('')
-    setResearchPanelOpen(false)
+    setResearchModeEnabled(false)
+    setResearchAgent('project10')
   }, [currentThreadId])
 
   useEffect(() => {
@@ -350,21 +428,6 @@ export default function ChatPage() {
       document.removeEventListener('mousedown', handleOutsideClick)
     }
   }, [tabularPanelOpen])
-
-  useEffect(() => {
-    if (!researchPanelOpen) return
-
-    const handleOutsideClick = (event: MouseEvent) => {
-      if (!researchPanelRef.current?.contains(event.target as Node)) {
-        setResearchPanelOpen(false)
-      }
-    }
-
-    document.addEventListener('mousedown', handleOutsideClick)
-    return () => {
-      document.removeEventListener('mousedown', handleOutsideClick)
-    }
-  }, [researchPanelOpen])
 
   useEffect(() => {
     setDatabaseConnected(false)
@@ -430,7 +493,9 @@ export default function ChatPage() {
     const selectedImageAttachment = selectedAttachments.find(
       (item) => item.kind === 'image' || item.mime_type.toLowerCase().startsWith('image/'),
     )
-    const optimisticPrompt = prompt || (shouldValidateImage ? 'Validate selected image' : rawPrompt)
+    const optimisticPrompt = researchModeEnabled
+      ? `Research (${researchAgent === 'project12' ? 'MCP' : 'API/No MCP'}): ${prompt}`
+      : (prompt || (shouldValidateImage ? 'Validate selected image' : rawPrompt))
 
     // Add optimistic user message
     await queryClient.setQueryData(
@@ -520,6 +585,66 @@ export default function ChatPage() {
           response_format: 'b64_json',
         })
         setError(null)
+      } else if (researchModeEnabled) {
+        let finalResult: ResearchDigestResponse | McpResearchResponse | null = null
+
+        const onResearchEvent = (event: { type: string; stage?: string; message?: string; content?: string; result?: ResearchDigestResponse | McpResearchResponse }) => {
+          if (event.type === 'status') {
+            setStreamingText((current) => `${current}${current ? '\n' : ''}[${event.stage}] ${event.message ?? ''}`)
+            return
+          }
+          if (event.type === 'token') {
+            setStreamingText((current) => `${current}${event.content ?? ''}`)
+            return
+          }
+          if (event.type === 'final' && event.result) {
+            finalResult = event.result
+          }
+        }
+
+        if (researchAgent === 'project12') {
+          await streamMcpResearch(
+            {
+              query: prompt,
+              max_results: 15,
+              max_summary_length: 1000,
+              thread_id: currentThreadId,
+            },
+            onResearchEvent,
+          )
+        } else {
+          await api.streamResearchDigest(
+            {
+              query: prompt,
+              max_results: 15,
+              max_summary_length: 1000,
+              thread_id: currentThreadId,
+            },
+            onResearchEvent,
+          )
+        }
+
+        if (!finalResult) {
+          throw new Error('Research digest stream ended without a final result.')
+        }
+
+        const assistantMessage: ChatMessage = {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: formatResearchDigestResult(finalResult),
+          created_at: new Date().toISOString(),
+        }
+
+        await queryClient.setQueryData(
+          ['chat', 'history', currentThreadId],
+          (old: { messages: ChatMessage[]; generated_images?: unknown[] } | undefined) => ({
+            messages: [...(old?.messages ?? []), assistantMessage],
+            generated_images: old?.generated_images ?? [],
+          }),
+        )
+
+        setResearchModeEnabled(false)
+        setError(null)
       } else {
         await api.streamChat(prompt, currentThreadId, attachmentIds, (token) => {
           setStreamingText((c) => c + token)
@@ -572,83 +697,6 @@ export default function ChatPage() {
     setError(null)
   }
 
-  const handleResearchDigest = async () => {
-    const query = researchQuery.trim()
-    if (!query || !currentThreadId || sending) return
-
-    setError(null)
-    setSending(true)
-    setStreamingText('')
-
-    await queryClient.setQueryData(
-      ['chat', 'history', currentThreadId],
-      (old: { messages: ChatMessage[] } | undefined) => {
-        const optimistic: ChatMessage = {
-          id: crypto.randomUUID(),
-          role: 'user',
-          content: `Research: ${query}`,
-          created_at: new Date().toISOString(),
-        }
-        return { messages: [...(old?.messages ?? []), optimistic] }
-      },
-    )
-
-    let finalResult: ResearchDigestResponse | null = null
-    try {
-      await api.streamResearchDigest(
-        {
-          query,
-          max_results: 15,
-          max_summary_length: 1000,
-          thread_id: currentThreadId,
-        },
-        (event) => {
-          if (event.type === 'status') {
-            setStreamingText((current) => `${current}${current ? '\n' : ''}[${event.stage}] ${event.message}`)
-            return
-          }
-          if (event.type === 'token') {
-            setStreamingText((current) => `${current}${event.content}`)
-            return
-          }
-          if (event.type === 'final') {
-            finalResult = event.result
-          }
-        },
-      )
-
-      if (!finalResult) {
-        throw new Error('Research digest stream ended without a final result.')
-      }
-
-      const assistantMessage: ChatMessage = {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: formatResearchDigestResult(finalResult),
-        created_at: new Date().toISOString(),
-      }
-
-      await queryClient.setQueryData(
-        ['chat', 'history', currentThreadId],
-        (old: { messages: ChatMessage[]; generated_images?: unknown[] } | undefined) => ({
-          messages: [...(old?.messages ?? []), assistantMessage],
-          generated_images: old?.generated_images ?? [],
-        }),
-      )
-
-      setResearchQuery('')
-      setResearchPanelOpen(false)
-      setSelectedAttachmentIds([])
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to generate research digest.')
-    } finally {
-      setSending(false)
-      setStreamingText('')
-      await queryClient.invalidateQueries({ queryKey: ['chat', 'history', currentThreadId] })
-      queryClient.invalidateQueries({ queryKey: ['threads'] })
-    }
-  }
-
   const handleAttachmentPick = async (files: FileList | null) => {
     if (!files || !currentThreadId || files.length === 0) return
 
@@ -683,7 +731,17 @@ export default function ChatPage() {
 
   if (!currentThreadId) {
     return (
-      <div className="app-shell flex h-screen">
+      <div className="app-shell flex h-screen overflow-hidden">
+        <CommandPalette
+          isOpen={commandOpen}
+          search={commandSearch}
+          onSearchChange={setCommandSearch}
+          commands={commands}
+          onClose={() => {
+            setCommandOpen(false)
+            setCommandSearch('')
+          }}
+        />
         <input
           ref={tabularFileInputRef}
           type="file"
@@ -705,6 +763,7 @@ export default function ChatPage() {
           onRenameChange={setRenameValue}
           onDelete={(id) => deleteThreadMutation.mutate(id)}
           onLogout={() => logoutMutation.mutate()}
+          className="hidden md:flex"
         />
         <div className="flex flex-1 items-center justify-center px-6 text-slate-400">
           <div className="ui-empty-state px-8 py-7 text-center">
@@ -717,7 +776,17 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="app-shell flex h-screen">
+    <div className="app-shell flex h-screen overflow-hidden">
+      <CommandPalette
+        isOpen={commandOpen}
+        search={commandSearch}
+        onSearchChange={setCommandSearch}
+        commands={commands}
+        onClose={() => {
+          setCommandOpen(false)
+          setCommandSearch('')
+        }}
+      />
       <input
         ref={tabularFileInputRef}
         type="file"
@@ -740,24 +809,46 @@ export default function ChatPage() {
         onRenameChange={setRenameValue}
         onDelete={(id) => deleteThreadMutation.mutate(id)}
         onLogout={() => logoutMutation.mutate()}
+        className={`fixed inset-y-0 left-0 z-40 transform transition-transform md:static md:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
+        onCloseMobile={() => setSidebarOpen(false)}
       />
+
+      {sidebarOpen && <div className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={() => setSidebarOpen(false)} />}
 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="border-b border-slate-800/80 bg-slate-900/55 px-5 py-4 backdrop-blur-sm sm:px-6">
-          <h1 className="text-base font-semibold text-slate-100 sm:text-lg">{activeThread?.name ?? 'Chat'}</h1>
-        </div>
+        <TopWorkspaceBar
+          title={activeThread?.name ?? 'Chat'}
+          subtitle="Enterprise workspace"
+          leftActions={(
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(true)}
+              className="ui-btn-secondary px-2.5 py-1.5 text-xs md:hidden"
+              aria-label="Open sidebar"
+            >
+              ☰
+            </button>
+          )}
+          rightActions={(
+            <>
+              <button type="button" className="ui-btn-secondary px-3 py-1.5 text-xs" onClick={() => setCommandOpen(true)}>
+                Search
+                <span className="ml-2 ui-kbd">Ctrl K</span>
+              </button>
+              <button type="button" className="ui-btn-secondary px-3 py-1.5 text-xs" onClick={toggleTheme}>
+                {theme === 'dark' ? 'Light' : 'Dark'}
+              </button>
+            </>
+          )}
+        />
 
         {/* Messages Container */}
         <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-6">
-          {historyQuery.isLoading && (
-            <div className="ui-surface-accent px-4 py-3 text-sm text-slate-300">Loading messages…</div>
-          )}
+          {historyQuery.isLoading && <SkeletonBlock lines={4} />}
 
-          {historyQuery.isError && (
-            <div className="ui-error-banner px-4 py-3 text-sm">Failed to load messages.</div>
-          )}
+          {historyQuery.isError && <StateBlock title="Failed to load messages" message="Try switching threads or refreshing." tone="error" />}
 
           {/* Timeline: messages + generated images in chronological order */}
           {timelineItems.map((item) => (
@@ -790,13 +881,7 @@ export default function ChatPage() {
           {sending && !streamingText && <TypingBubble />}
 
           {/* Error message */}
-          {error && (
-            <div className="flex justify-center">
-              <div className="ui-error-banner px-4 py-2">
-                <p className="text-sm">{error}</p>
-              </div>
-            </div>
-          )}
+          {error && <StateBlock title="Request error" message={error} tone="error" />}
 
           {/* Auto-scroll anchor */}
           <div ref={messagesEndRef} />
@@ -945,7 +1030,7 @@ export default function ChatPage() {
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   disabled={uploadAttachmentMutation.isPending}
-                  className="ui-btn-secondary shrink-0 px-3 py-3 disabled:opacity-50"
+                  className="ui-btn-secondary shrink-0 px-2 py-2 text-[11px] disabled:opacity-50"
                   title="Attach files"
                 >
                   📎
@@ -953,19 +1038,31 @@ export default function ChatPage() {
                 <button
                   type="button"
                   onClick={() => setTabularPanelOpen((current) => !current)}
-                  className={`ui-btn-secondary shrink-0 px-3 py-3 text-xs font-semibold ${tabularModeEnabled ? 'border-emerald-400/70 text-emerald-100' : ''}`}
+                  className={`ui-btn-secondary shrink-0 px-2 py-2 text-[11px] font-semibold ${tabularModeEnabled ? 'border-emerald-400/70 text-emerald-100' : ''}`}
                   title="Excel / GSheet QA"
                 >
                   ▦
                 </button>
                 <button
                   type="button"
-                  onClick={() => setResearchPanelOpen((current) => !current)}
-                  className={`ui-btn-secondary shrink-0 px-3 py-3 text-xs font-semibold ${researchQuery ? 'border-emerald-400/70 text-emerald-100' : ''}`}
-                  title="Research Digest (arXiv)"
+                  onClick={() => setResearchModeEnabled((current) => !current)}
+                  className={`ui-btn-secondary shrink-0 px-2 py-2 text-[11px] font-semibold ${researchModeEnabled ? 'border-emerald-400/70 text-emerald-100' : ''}`}
+                  title="Research Agent Mode"
                 >
                   🔬
                 </button>
+                {researchModeEnabled && (
+                  <select
+                    value={researchAgent}
+                    onChange={(event) => setResearchAgent(event.target.value as 'project10' | 'project12')}
+                    className="ui-input w-36 px-2 py-2 text-[11px]"
+                    title="Select research engine"
+                    disabled={sending}
+                  >
+                    <option value="project10">API/No MCP</option>
+                    <option value="project12">MCP</option>
+                  </select>
+                )}
 
                 {tabularPanelOpen && (
                   <div className="ui-surface-accent absolute bottom-full left-0 z-20 mb-2 w-72 px-3 py-3 shadow-2xl">
@@ -1009,38 +1106,6 @@ export default function ChatPage() {
                   </div>
                 )}
 
-                {researchPanelOpen && (
-                  <div
-                    ref={researchPanelRef}
-                    className="ui-surface-accent absolute bottom-full left-0 z-20 mb-2 w-72 px-3 py-3 shadow-2xl"
-                  >
-                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-blue-200/80">Research Digest (arXiv)</p>
-                    <div className="space-y-2">
-                      <input
-                        value={researchQuery}
-                        onChange={(e) => setResearchQuery(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            void handleResearchDigest()
-                          }
-                        }}
-                        placeholder="Research topic or keywords"
-                        className="ui-input px-2.5 py-1.5 text-xs w-full"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => void handleResearchDigest()}
-                        disabled={sending || !researchQuery.trim()}
-                        className="ui-btn-secondary w-full rounded-lg px-3 py-2 text-xs font-medium disabled:opacity-50"
-                      >
-                        {sending ? 'Searching…' : 'Search & Digest'}
-                      </button>
-                      <p className="text-[11px] text-slate-400">
-                        Searches arXiv for papers and generates a structured research digest.
-                      </p>
-                    </div>
-                  </div>
-                )}
               </div>
 
               <div className="flex-1">
@@ -1048,7 +1113,9 @@ export default function ChatPage() {
                   value={input}
                   onChange={setInput}
                   onKeyDown={handleKeyDown}
-                  placeholder={databaseModeEnabled
+                  placeholder={researchModeEnabled
+                    ? `Research mode on (${researchAgent === 'project12' ? 'MCP' : 'API/No MCP'}): type topic/keywords and press Enter`
+                    : databaseModeEnabled
                     ? 'Ask a natural-language database question…'
                     : 'Type a message… (/image for generation, /validate for selected image validation)'}
                   disabled={sending}

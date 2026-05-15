@@ -263,3 +263,56 @@ export type ResearchDigestStreamEvent =
 	| { type: 'final'; result: ResearchDigestResponse }
 	| { type: 'done' }
 	| { type: 'error'; message: string }
+
+// ── Project 12 — MCP Research (same shape as P10, extra agent_source field) ─
+export type McpResearchQueryRequest = {
+	query: string
+	max_results?: number
+	max_summary_length?: number
+	thread_id?: string
+}
+
+export type McpResearchPaper = {
+	title: string
+	authors: string[]
+	published: string
+	arxiv_id: string
+	url: string
+	summary: string
+}
+
+export type McpResearchResponse = {
+	query: string
+	papers_found: number
+	digest: string
+	papers: McpResearchPaper[]
+	thread_id?: string | null
+	agent_source: string
+}
+
+export type McpResearchStreamEvent =
+	| { type: 'status'; stage: string; message: string }
+	| { type: 'token'; content: string }
+	| { type: 'final'; result: McpResearchResponse }
+	| { type: 'done' }
+	| { type: 'error'; message: string }
+
+export type TicTacToeMark = 'X' | 'O'
+
+export type TicTacToeMoveRequest = {
+	board: string[]
+	user_move: number
+	user_mark?: TicTacToeMark
+	agent_mark?: TicTacToeMark
+	thread_id?: string
+}
+
+export type TicTacToeMoveResponse = {
+	board: string[]
+	user_move: number
+	agent_move: number | null
+	status: 'in_progress' | 'user_won' | 'agent_won' | 'draw'
+	winner: TicTacToeMark | null
+	agent_reason: string
+	agent_source: 'llm' | 'fallback' | 'none'
+}

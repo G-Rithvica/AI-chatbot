@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { useMemo, useState } from 'react'
 
 import type { Thread } from '../../types'
 
@@ -16,6 +17,8 @@ interface ChatSidebarProps {
   onRenameChange: (value: string) => void
   onDelete: (threadId: string) => void
   onLogout: () => void
+  className?: string
+  onCloseMobile?: () => void
 }
 
 export function ChatSidebar({
@@ -32,19 +35,47 @@ export function ChatSidebar({
   onRenameChange,
   onDelete,
   onLogout,
+  className,
+  onCloseMobile,
 }: ChatSidebarProps) {
+  const [search, setSearch] = useState('')
+  const toolLinks = [
+    { to: '/image-rules', icon: '🔍', label: 'Image Rule Checker' },
+    { to: '/analytics', icon: '📊', label: 'Analytics' },
+    { to: '/admin', icon: '🛡️', label: 'Admin Panel' },
+    { to: '/settings', icon: '⚙️', label: 'Settings' },
+    { to: '/profile', icon: '👤', label: 'Profile' },
+    { to: '/project11/tic-tac-toe-agent', icon: '🎮', label: 'Tic Tac Toe Agent' },
+  ]
+  const filteredThreads = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    if (!query) return threads
+    return threads.filter((thread) => thread.name.toLowerCase().includes(query))
+  }, [search, threads])
+
   return (
-    <aside className="flex w-64 flex-col border-r border-slate-800/80 bg-slate-950/45 backdrop-blur-sm md:w-72">
+    <aside className={`flex w-64 flex-col border-r border-slate-800/80 bg-slate-950/45 backdrop-blur-sm md:w-72 ${className ?? ''}`}>
       {/* Header */}
       <div className="flex items-center justify-between border-b border-slate-800/80 px-4 py-4">
         <h1 className="text-sm font-semibold tracking-wide text-slate-100">AI Chat</h1>
-        <button
-          onClick={onLogout}
-          className="rounded-md px-2 py-1 text-xs text-slate-400 transition hover:bg-slate-800/60 hover:text-slate-200"
-          title="Logout"
-        >
-          ⏚
-        </button>
+        <div className="flex items-center gap-2">
+          {onCloseMobile && (
+            <button
+              onClick={onCloseMobile}
+              className="rounded-md px-2 py-1 text-xs text-slate-400 transition hover:bg-slate-800/60 hover:text-slate-200 md:hidden"
+              title="Close sidebar"
+            >
+              ✕
+            </button>
+          )}
+          <button
+            onClick={onLogout}
+            className="rounded-md px-2 py-1 text-xs text-slate-400 transition hover:bg-slate-800/60 hover:text-slate-200"
+            title="Logout"
+          >
+            ⏚
+          </button>
+        </div>
       </div>
 
       {/* New Chat Button */}
@@ -58,11 +89,21 @@ export function ChatSidebar({
         </button>
       </div>
 
+      <div className="px-3 pb-2">
+        <input
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search threads"
+          className="ui-input py-2 text-sm"
+          aria-label="Search threads"
+        />
+      </div>
+
       {/* Chat History */}
       <nav className="flex-1 space-y-1 overflow-y-auto px-2 pb-4">
         {isLoading && <p className="px-2 py-2 text-xs text-emerald-200/80">Loading…</p>}
         
-        {threads.map((thread) => (
+        {filteredThreads.map((thread) => (
           <div
             key={thread.id}
             className={`group flex items-center gap-2 rounded-lg px-3 py-2 transition ${
@@ -87,7 +128,10 @@ export function ChatSidebar({
             ) : (
               <>
                 <button
-                  onClick={() => onSelectThread(thread.id)}
+                  onClick={() => {
+                    onSelectThread(thread.id)
+                    onCloseMobile?.()
+                  }}
                   className="flex-1 text-left text-sm truncate"
                 >
                   {thread.name}
@@ -119,19 +163,29 @@ export function ChatSidebar({
           </div>
         ))}
 
-        {!isLoading && threads.length === 0 && (
+        {!isLoading && filteredThreads.length === 0 && (
           <p className="px-2 py-2 text-xs text-slate-500">No chats yet.</p>
         )}
       </nav>
 
-      {/* Tool links */}
-      <div className="border-t border-slate-800/60 px-3 py-3 space-y-2">
-        <Link
-          to="/image-rules"
-          className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-400 transition hover:bg-slate-800/70 hover:text-slate-200"
-        >
-          <span>🔍</span> Image Rule Checker
-        </Link>
+      {/* Tool dock */}
+      <div className="border-t border-slate-800/60 px-2 py-2">
+        <div className="flex items-center justify-between gap-1">
+          {toolLinks.map((tool) => (
+            <Link
+              key={tool.to}
+              to={tool.to}
+              title={tool.label}
+              aria-label={tool.label}
+              className="group relative flex h-9 w-9 items-center justify-center rounded-lg text-base text-slate-400 transition hover:bg-slate-800/70 hover:text-slate-100"
+            >
+              <span>{tool.icon}</span>
+              <span className="pointer-events-none absolute bottom-full left-1/2 mb-1 -translate-x-1/2 rounded-md border border-slate-700 bg-slate-950/95 px-2 py-1 text-[10px] font-medium text-slate-200 opacity-0 shadow-lg transition group-hover:opacity-100">
+                {tool.label}
+              </span>
+            </Link>
+          ))}
+        </div>
       </div>
     </aside>
   )

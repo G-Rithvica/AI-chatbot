@@ -1,7 +1,11 @@
 import { useMutation } from '@tanstack/react-query'
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
+import { TopWorkspaceBar } from '../components/layout/TopWorkspaceBar'
+import { CommandPalette } from '../components/ui/CommandPalette'
+import { StateBlock } from '../components/ui/StateBlock'
+import { useTheme } from '../hooks/useTheme'
 import { api } from '../lib/api'
 import type {
   Attachment,
@@ -173,6 +177,7 @@ function ImageResultCard({ item }: { item: ImageValidationBatchItem }) {
 // Main Page
 // ---------------------------------------------------------------------------
 export default function ImageRulePage() {
+  const { theme, toggleTheme } = useTheme()
   // --- state -----------------------------------------------------------------
   const [includeDefaults, setIncludeDefaults] = useState(true)
   const [customRules, setCustomRules] = useState<RuleDraft[]>([])
@@ -189,6 +194,8 @@ export default function ImageRulePage() {
   const [sessionThreadId, setSessionThreadId] = useState<string | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [batchResult, setBatchResult] = useState<ImageValidationBatchResult | null>(null)
+  const [commandOpen, setCommandOpen] = useState(false)
+  const [commandSearch, setCommandSearch] = useState('')
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -263,25 +270,72 @@ export default function ImageRulePage() {
       ]
     : null
 
+  const commands = [
+    {
+      id: 'toggle-theme',
+      label: theme === 'dark' ? 'Switch to Light Theme' : 'Switch to Dark Theme',
+      onTrigger: toggleTheme,
+    },
+    {
+      id: 'back-chat',
+      label: 'Back to Chat',
+      onTrigger: () => { window.location.href = '/chat' },
+    },
+    {
+      id: 'run-validation',
+      label: 'Run Validation',
+      onTrigger: () => {
+        if (!validateMutation.isPending && images.length > 0) {
+          validateMutation.mutate()
+        }
+      },
+    },
+  ]
+
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setCommandOpen(true)
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [])
+
   // ---------------------------------------------------------------------------
   return (
     <main className="app-shell min-h-screen px-4 py-6 sm:px-6 lg:px-8">
+      <CommandPalette
+        isOpen={commandOpen}
+        search={commandSearch}
+        onSearchChange={setCommandSearch}
+        commands={commands}
+        onClose={() => {
+          setCommandOpen(false)
+          setCommandSearch('')
+        }}
+      />
       <div className="mx-auto flex max-w-7xl flex-col gap-6">
 
-        {/* Header */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-[0.25em] text-emerald-200/70">Project 8</p>
-            <h1 className="mt-2 text-3xl font-semibold text-slate-50">Image Rule Checker</h1>
-            <p className="mt-2 max-w-3xl text-sm text-slate-300">
-              Upload images, define a set of extraction rules, and check each image against those rules.
-              The AI extracts text, labels, and field values from each image, then evaluates every rule automatically.
-            </p>
-          </div>
-          <Link to="/chat" className="ui-btn-secondary inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-medium whitespace-nowrap">
-            ← Back to Chat
-          </Link>
-        </div>
+        <TopWorkspaceBar
+          title="Image Rule Checker"
+          subtitle="Upload images, configure rules, and validate with AI extraction"
+          rightActions={(
+            <>
+              <button type="button" className="ui-btn-secondary px-3 py-1.5 text-xs" onClick={() => setCommandOpen(true)}>
+                Search
+                <span className="ml-2 ui-kbd">Ctrl K</span>
+              </button>
+              <button type="button" className="ui-btn-secondary px-3 py-1.5 text-xs" onClick={toggleTheme}>
+                {theme === 'dark' ? 'Light' : 'Dark'}
+              </button>
+              <Link to="/chat" className="ui-btn-secondary inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-medium whitespace-nowrap">
+                ← Back to Chat
+              </Link>
+            </>
+          )}
+        />
 
         <div className="grid gap-6 lg:grid-cols-[minmax(340px,420px)_1fr]">
 
@@ -398,7 +452,7 @@ export default function ImageRulePage() {
               </div>
               <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => void handleFileDrop(e.target.files)} />
 
-              {uploadError && <p className="mb-3 text-xs text-rose-300">{uploadError}</p>}
+              {uploadError && <StateBlock title="Upload error" message={uploadError} tone="error" />}
 
               {/* Image thumbnails */}
               {images.length > 0 && (

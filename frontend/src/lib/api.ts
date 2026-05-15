@@ -20,6 +20,11 @@ import type {
   ResearchDigestQueryRequest,
   ResearchDigestResponse,
   ResearchDigestStreamEvent,
+  TicTacToeMoveRequest,
+  TicTacToeMoveResponse,
+  McpResearchQueryRequest,
+  McpResearchResponse,
+  McpResearchStreamEvent,
   StreamEvent,
   Thread,
   ThreadListResponse,
@@ -209,4 +214,42 @@ export const api = {
     request<SpreadsheetQueryResponse>('/api/database/spreadsheet/query', { method: 'POST', body }),
   researchDigestQuery: (body: ResearchDigestQueryRequest) =>
     request<ResearchDigestResponse>('/api/project10/research-digest/query', { method: 'POST', body }),
+  ticTacToeAgentMove: (body: TicTacToeMoveRequest) =>
+    request<TicTacToeMoveResponse>('/api/project11/tic-tac-toe-agent/move', { method: 'POST', body }),
+  mcpResearchQuery: (body: McpResearchQueryRequest) =>
+    request<McpResearchResponse>('/api/project12/mcp-research/query', { method: 'POST', body }),
+}
+
+export async function streamMcpResearch(
+  body: McpResearchQueryRequest,
+  onEvent: (event: McpResearchStreamEvent) => void,
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/project12/mcp-research/stream`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+
+  if (!response.ok || !response.body) {
+    throw new Error(`Request failed with status ${response.status}`)
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const events = buffer.split('\n\n')
+    buffer = events.pop() ?? ''
+    for (const evt of events) {
+      if (!evt.startsWith('data: ')) continue
+      const parsed = JSON.parse(evt.slice(6)) as McpResearchStreamEvent
+      onEvent(parsed)
+      if (parsed.type === 'error') throw new Error(parsed.message)
+    }
+  }
 }

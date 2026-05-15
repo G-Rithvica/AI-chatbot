@@ -1,5 +1,6 @@
 import type { Attachment, ChatMessage } from '../../types'
 import { fileTypeBadge, toAbsoluteAttachmentUrl } from '../../lib/messageHelpers'
+import { DataGrid } from '../ui/DataGrid'
 
 type TableAlignment = 'left' | 'center' | 'right'
 
@@ -237,38 +238,12 @@ export function MessageContentRenderer({ content }: { content: string }) {
         }
 
         return (
-          <div key={`table-${blockIndex}`} className="ui-chat-table-wrap rounded-lg border border-slate-700/70">
-            <table className="ui-chat-table border-collapse text-sm">
-              <thead>
-                <tr>
-                  {block.header.map((cell, cellIndex) => (
-                    <th
-                      key={`head-${cellIndex}`}
-                      className="ui-chat-table-th"
-                      style={{ textAlign: block.alignments[cellIndex] ?? 'left' }}
-                    >
-                      {cell}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {block.rows.map((row, rowIndex) => (
-                  <tr key={`row-${rowIndex}`} className="ui-chat-table-row">
-                    {row.map((cell, cellIndex) => (
-                      <td
-                        key={`cell-${rowIndex}-${cellIndex}`}
-                        className="ui-chat-table-td"
-                        style={{ textAlign: block.alignments[cellIndex] ?? 'left' }}
-                      >
-                        {cell}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataGrid
+            key={`table-${blockIndex}`}
+            columns={block.header}
+            rows={block.rows}
+            alignments={block.alignments}
+          />
         )
       })}
     </div>
