@@ -122,7 +122,6 @@ export default function ChatPage() {
   const [tabularSourceId, setTabularSourceId] = useState<string | null>(null)
   const [tabularSourceLabel, setTabularSourceLabel] = useState<string | null>(null)
   const [tabularGSheetUrl, setTabularGSheetUrl] = useState('')
-  const [tabularPanelOpen, setTabularPanelOpen] = useState(false)
   const [researchModeEnabled, setResearchModeEnabled] = useState(false)
   const [researchAgent, setResearchAgent] = useState<'project10' | 'project12'>('project10')
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -142,7 +141,6 @@ export default function ChatPage() {
   })
   const fileInputRef = useRef<HTMLInputElement>(null)
   const tabularFileInputRef = useRef<HTMLInputElement>(null)
-  const tabularPanelRef = useRef<HTMLDivElement>(null)
   const currentThreadIdRef = useRef<string | null>(null)
 
   // ── Threads ──────────────────────────────────────────────────────────────
@@ -409,25 +407,9 @@ export default function ChatPage() {
     setTabularSourceId(null)
     setTabularSourceLabel(null)
     setTabularGSheetUrl('')
-    setTabularPanelOpen(false)
     setResearchModeEnabled(false)
     setResearchAgent('project10')
   }, [currentThreadId])
-
-  useEffect(() => {
-    if (!tabularPanelOpen) return
-
-    const handleOutsideClick = (event: MouseEvent) => {
-      if (!tabularPanelRef.current?.contains(event.target as Node)) {
-        setTabularPanelOpen(false)
-      }
-    }
-
-    document.addEventListener('mousedown', handleOutsideClick)
-    return () => {
-      document.removeEventListener('mousedown', handleOutsideClick)
-    }
-  }, [tabularPanelOpen])
 
   useEffect(() => {
     setDatabaseConnected(false)
@@ -607,7 +589,7 @@ export default function ChatPage() {
             {
               query: prompt,
               max_results: 15,
-              max_summary_length: 1000,
+              max_summary_length: 2800,
               thread_id: currentThreadId,
             },
             onResearchEvent,
@@ -1016,6 +998,39 @@ export default function ChatPage() {
                       : 'Enable DB mode and connect first. Then ask natural language database questions in this same chat.'}
                 </p>
               )}
+
+              {tabularModeEnabled && (
+                <div className="mt-3 space-y-2 rounded-lg border border-emerald-900/40 bg-slate-900/35 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-200/80">Excel / GSheet QA</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => tabularFileInputRef.current?.click()}
+                      disabled={sending}
+                      className="ui-btn-secondary rounded-lg px-2.5 py-1.5 text-[11px] font-medium disabled:opacity-50"
+                    >
+                      Upload Excel
+                    </button>
+                    <input
+                      value={tabularGSheetUrl}
+                      onChange={(e) => setTabularGSheetUrl(e.target.value)}
+                      placeholder="Load GSheet URL"
+                      className="ui-input min-w-[220px] flex-1 px-2 py-1.5 text-[11px]"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleTabularLoadGSheet}
+                      disabled={sending || !tabularGSheetUrl.trim()}
+                      className="ui-btn-secondary rounded-lg px-2.5 py-1.5 text-[11px] font-medium disabled:opacity-50"
+                    >
+                      Load GSheet
+                    </button>
+                  </div>
+                  <p className="truncate text-[11px] text-slate-400">
+                    Source: {tabularSourceLabel ?? 'None selected (upload or load a URL first)'}
+                  </p>
+                </div>
+              )}
             </div>
 
             <div className="flex gap-3">
@@ -1026,19 +1041,19 @@ export default function ChatPage() {
                 className="hidden"
                 onChange={(e) => handleAttachmentPick(e.target.files)}
               />
-              <div ref={tabularPanelRef} className="relative flex shrink-0 gap-2">
+              <div className="flex shrink-0 gap-1.5">
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   disabled={uploadAttachmentMutation.isPending}
-                  className="ui-btn-secondary shrink-0 px-2 py-2 text-[11px] disabled:opacity-50"
+                  className="ui-btn-secondary shrink-0 px-1.5 py-1.5 text-[10px] disabled:opacity-50"
                   title="Attach files"
                 >
                   📎
                 </button>
                 <button
                   type="button"
-                  onClick={() => setTabularPanelOpen((current) => !current)}
-                  className={`ui-btn-secondary shrink-0 px-2 py-2 text-[11px] font-semibold ${tabularModeEnabled ? 'border-emerald-400/70 text-emerald-100' : ''}`}
+                  onClick={() => setTabularModeEnabled((current) => !current)}
+                  className={`ui-btn-secondary shrink-0 px-1.5 py-1.5 text-[10px] font-semibold ${tabularModeEnabled ? 'border-emerald-400/70 text-emerald-100' : ''}`}
                   title="Excel / GSheet QA"
                 >
                   ▦
@@ -1046,7 +1061,7 @@ export default function ChatPage() {
                 <button
                   type="button"
                   onClick={() => setResearchModeEnabled((current) => !current)}
-                  className={`ui-btn-secondary shrink-0 px-2 py-2 text-[11px] font-semibold ${researchModeEnabled ? 'border-emerald-400/70 text-emerald-100' : ''}`}
+                  className={`ui-btn-secondary shrink-0 px-1.5 py-1.5 text-[10px] font-semibold ${researchModeEnabled ? 'border-emerald-400/70 text-emerald-100' : ''}`}
                   title="Research Agent Mode"
                 >
                   🔬
@@ -1055,7 +1070,7 @@ export default function ChatPage() {
                   <select
                     value={researchAgent}
                     onChange={(event) => setResearchAgent(event.target.value as 'project10' | 'project12')}
-                    className="ui-input w-36 px-2 py-2 text-[11px]"
+                    className="ui-input w-28 px-1.5 py-1.5 text-[10px]"
                     title="Select research engine"
                     disabled={sending}
                   >
@@ -1063,49 +1078,6 @@ export default function ChatPage() {
                     <option value="project12">MCP</option>
                   </select>
                 )}
-
-                {tabularPanelOpen && (
-                  <div className="ui-surface-accent absolute bottom-full left-0 z-20 mb-2 w-72 px-3 py-3 shadow-2xl">
-                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-emerald-200/80">Excel / GSheet QA</p>
-                    <div className="space-y-2">
-                      <button
-                        type="button"
-                        onClick={() => tabularFileInputRef.current?.click()}
-                        disabled={sending}
-                        className="ui-btn-secondary w-full rounded-lg px-3 py-2 text-xs font-medium disabled:opacity-50"
-                      >
-                        Upload Excel
-                      </button>
-                      <input
-                        value={tabularGSheetUrl}
-                        onChange={(e) => setTabularGSheetUrl(e.target.value)}
-                        placeholder="Load GSheet URL"
-                        className="ui-input px-2.5 py-1.5 text-xs"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleTabularLoadGSheet}
-                        disabled={sending || !tabularGSheetUrl.trim()}
-                        className="ui-btn-secondary w-full rounded-lg px-3 py-2 text-xs font-medium disabled:opacity-50"
-                      >
-                        Load GSheet
-                      </button>
-                      <label className="flex items-center justify-between rounded-lg border border-slate-800/70 bg-slate-950/40 px-2.5 py-2 text-xs text-slate-300">
-                        <span>Query Tabular</span>
-                        <input
-                          type="checkbox"
-                          checked={tabularModeEnabled}
-                          onChange={(e) => setTabularModeEnabled(e.target.checked)}
-                          disabled={sending || !tabularSourceLabel}
-                        />
-                      </label>
-                      <p className="truncate text-[11px] text-slate-400">
-                        Source: {tabularSourceLabel ?? 'None selected'}
-                      </p>
-                    </div>
-                  </div>
-                )}
-
               </div>
 
               <div className="flex-1">
@@ -1119,14 +1091,14 @@ export default function ChatPage() {
                     ? 'Ask a natural-language database question…'
                     : 'Type a message… (/image for generation, /validate for selected image validation)'}
                   disabled={sending}
-                  maxRows={6}
+                  maxRows={10}
                 />
               </div>
 
               <button
                 onClick={handleSend}
                 disabled={sending || !input.trim()}
-                className="ui-btn-primary shrink-0 px-4 py-3 disabled:opacity-50"
+                className="ui-btn-primary shrink-0 px-3 py-2.5 text-sm disabled:opacity-50"
                 title="Send message"
               >
                 {sending ? '⏳' : '→'}

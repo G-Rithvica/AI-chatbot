@@ -34,13 +34,7 @@ async def test_user_can_win_before_agent_turn() -> None:
 
 
 @pytest.mark.asyncio
-async def test_uses_llm_move_when_legal(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def _llm_stub(board, agent_mark, user_mark, legal_moves):  # noqa: ANN001
-        assert 4 in legal_moves
-        return 4, 'Take center for board control.'
-
-    monkeypatch.setattr(project11_service, '_llm_move', _llm_stub)
-
+async def test_agent_uses_fast_deterministic_policy() -> None:
     result = await project11_service.play_tic_tac_toe_turn(
         TicTacToeMoveRequest(
             board=['X', '', '', '', '', '', '', '', ''],
@@ -50,18 +44,13 @@ async def test_uses_llm_move_when_legal(monkeypatch: pytest.MonkeyPatch) -> None
         )
     )
 
-    assert result.agent_move == 4
-    assert result.agent_source == 'llm'
-    assert 'center' in result.agent_reason.lower()
+    assert result.agent_move is not None
+    assert result.agent_source == 'fallback'
+    assert 'deterministic minimax' in result.agent_reason.lower()
 
 
 @pytest.mark.asyncio
-async def test_falls_back_when_llm_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def _llm_none(board, agent_mark, user_mark, legal_moves):  # noqa: ANN001
-        return None
-
-    monkeypatch.setattr(project11_service, '_llm_move', _llm_none)
-
+async def test_fallback_move_is_legal_and_game_progresses() -> None:
     result = await project11_service.play_tic_tac_toe_turn(
         TicTacToeMoveRequest(
             board=['X', '', '', '', '', '', '', '', ''],

@@ -240,15 +240,9 @@ async def play_tic_tac_toe_turn(request: TicTacToeMoveRequest) -> TicTacToeMoveR
             agent_source='none',
         )
 
-    legal_moves = _available_moves(board)
-    llm_choice = await _llm_move(board, agent_mark, user_mark, legal_moves)
-
-    if llm_choice is not None:
-        agent_move, agent_reason = llm_choice
-        agent_source = 'llm'
-    else:
-        agent_move, agent_reason = _best_fallback_move(board, agent_mark, user_mark)
-        agent_source = 'fallback'
+    # Use deterministic minimax for immediate response time on each move.
+    agent_move, agent_reason = _best_fallback_move(board, agent_mark, user_mark)
+    agent_source = 'fallback'
 
     if agent_move < 0:
         raise TicTacToeValidationError('No legal move available for agent.')

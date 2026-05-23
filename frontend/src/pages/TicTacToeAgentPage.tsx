@@ -8,7 +8,6 @@ import { api } from '../lib/api'
 import type { TicTacToeMoveResponse } from '../types'
 
 const EMPTY_BOARD = Array.from({ length: 9 }, () => '')
-const PROJECT11_THREAD_KEY = 'project11:threadId'
 
 function statusLabel(status: string): string {
   if (status === 'user_won') return 'You won this round.'
@@ -40,13 +39,6 @@ export default function TicTacToeAgentPage() {
   const [winner, setWinner] = useState<string | null>(null)
   const [agentReason, setAgentReason] = useState<string>('Agent is ready to play.')
   const [agentSource, setAgentSource] = useState<string>('none')
-  const [threadId, setThreadId] = useState<string | null>(() => {
-    try {
-      return localStorage.getItem(PROJECT11_THREAD_KEY)
-    } catch {
-      return null
-    }
-  })
   const [error, setError] = useState<string | null>(null)
 
   const ended = useMemo(() => status === 'user_won' || status === 'agent_won' || status === 'draw', [status])
@@ -56,29 +48,12 @@ export default function TicTacToeAgentPage() {
     return null
   }, [userDisplayName, winner])
 
-  const threadMutation = useMutation({
-    mutationFn: async () => {
-      const thread = await api.createThread()
-      await api.renameThread(thread.id, 'Project 11 - Tic Tac Toe')
-      return thread.id
-    },
-    onSuccess: (id) => {
-      setThreadId(id)
-      try {
-        localStorage.setItem(PROJECT11_THREAD_KEY, id)
-      } catch {
-        // Ignore storage write errors.
-      }
-    },
-  })
-
   const moveMutation = useMutation({
-    mutationFn: ({ userMove, boardBefore, persistedThreadId }: { userMove: number; boardBefore: string[]; persistedThreadId: string | null }) => api.ticTacToeAgentMove({
+    mutationFn: ({ userMove, boardBefore }: { userMove: number; boardBefore: string[] }) => api.ticTacToeAgentMove({
       board: boardBefore,
       user_move: userMove,
       user_mark: 'X',
       agent_mark: 'O',
-      thread_id: persistedThreadId ?? undefined,
     }),
     onSuccess: (result: TicTacToeMoveResponse) => {
       setBoard(result.board)
@@ -98,22 +73,13 @@ export default function TicTacToeAgentPage() {
     if (moveMutation.isPending || ended) return
     if (board[index]) return
 
-    let persistedThreadId = threadId
-    if (!persistedThreadId) {
-      try {
-        persistedThreadId = await threadMutation.mutateAsync()
-      } catch (threadError) {
-        setError(threadError instanceof Error ? threadError.message : 'Unable to prepare game transcript thread.')
-      }
-    }
-
     const boardBefore = [...board]
     const optimisticBoard = [...boardBefore]
     optimisticBoard[index] = 'X'
     setBoard(optimisticBoard)
     setError(null)
 
-    moveMutation.mutate({ userMove: index, boardBefore, persistedThreadId })
+    moveMutation.mutate({ userMove: index, boardBefore })
   }
 
   const handleReset = () => {
@@ -214,7 +180,7 @@ export default function TicTacToeAgentPage() {
                 <p className="text-sm text-slate-200">{agentReason}</p>
               </div>
 
-              {(moveMutation.isPending || threadMutation.isPending) && (
+              {moveMutation.isPending && (
                 <StateBlock tone="neutral" title="Agent is thinking" message="Evaluating board and selecting optimal legal move..." />
               )}
 

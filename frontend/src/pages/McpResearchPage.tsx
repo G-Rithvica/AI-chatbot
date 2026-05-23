@@ -46,6 +46,11 @@ export default function McpResearchPage() {
 
   const threadId = useMemo(() => selectedThreadId || undefined, [selectedThreadId])
 
+  const sanitizeMaxResults = (value: number) => {
+    if (!Number.isFinite(value)) return 10
+    return Math.min(50, Math.max(1, Math.trunc(value)))
+  }
+
   const handleStream = async () => {
     const q = query.trim()
     if (!q || streaming) return
@@ -55,8 +60,9 @@ export default function McpResearchPage() {
     setError(null)
 
     try {
+      const safeMaxResults = sanitizeMaxResults(maxResults)
       await streamMcpResearch(
-        { query: q, max_results: maxResults, max_summary_length: 800, thread_id: threadId },
+        { query: q, max_results: safeMaxResults, max_summary_length: 800, thread_id: threadId },
         (evt) => {
           if (evt.type === 'status') {
             setStreamLog((l) => [...l, `[${evt.stage}] ${evt.message}`])
@@ -83,7 +89,12 @@ export default function McpResearchPage() {
   }
 
   const queryMutation = useMutation({
-    mutationFn: () => api.mcpResearchQuery({ query: query.trim(), max_results: maxResults, max_summary_length: 800, thread_id: threadId }),
+    mutationFn: () => api.mcpResearchQuery({
+      query: query.trim(),
+      max_results: sanitizeMaxResults(maxResults),
+      max_summary_length: 800,
+      thread_id: threadId,
+    }),
     onSuccess: (data) => {
       setResult(data)
       setError(null)
@@ -129,7 +140,7 @@ export default function McpResearchPage() {
                 min={1}
                 max={50}
                 value={maxResults}
-                onChange={(e) => setMaxResults(Number(e.target.value))}
+                onChange={(e) => setMaxResults(sanitizeMaxResults(Number(e.target.value)))}
                 className="ui-input w-16 text-center"
               />
             </div>

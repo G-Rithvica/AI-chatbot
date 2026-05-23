@@ -112,7 +112,7 @@ def search_arxiv_papers(query: str, max_results: int = 10) -> str:
 
 
 @mcp.tool()
-async def generate_research_digest(papers_json: str, query: str, max_length: int = 800) -> str:
+async def generate_research_digest(papers_json: str, query: str, max_length: int = 2800) -> str:
     """Generate a structured research digest from a JSON list of papers.
 
     Args:
@@ -144,8 +144,8 @@ async def generate_research_digest(papers_json: str, query: str, max_length: int
         f"Title: {p['title']}\n"
         f"Authors: {', '.join(p.get('authors', []))}\n"
         f"Published: {p['published']}\n"
-        f"Summary: {p.get('summary', '')[:300]}..."
-        for p in papers[:15]
+        f"Summary: {p.get('summary', '')[:700]}"
+        for p in papers[:25]
     )
 
     client = get_async_openai_client()
@@ -156,16 +156,23 @@ async def generate_research_digest(papers_json: str, query: str, max_length: int
             {
                 'role': 'system',
                 'content': (
-                    'You are a research digest generator. Create a structured, concise digest of '
-                    'research papers. Include key findings, trends, and notable papers. '
-                    'Keep it under the specified length.'
+                    'You are a senior research analyst. Produce a detailed, high-information digest '
+                    'with explicit section headings and concrete takeaways grounded in the provided papers. '
+                    'Avoid vague summaries. Include enough detail for engineering decisions.'
                 ),
             },
             {
                 'role': 'user',
                 'content': (
-                    f'Generate a research digest for query: "{query}"\n\nPapers:\n{papers_text}\n\n'
-                    f'Keep digest under {max_length} characters. Format with clear sections.'
+                    f'Generate a detailed research digest for query: "{query}"\n\nPapers:\n{papers_text}\n\n'
+                    'Use this structure:\n'
+                    '1) Executive Summary (5-8 bullets)\n'
+                    '2) Core Themes (at least 4 themes with concrete evidence)\n'
+                    '3) Notable Papers (at least 8 paper callouts with title + why it matters)\n'
+                    '4) Technical Methods/Architectures observed\n'
+                    '5) Limitations and open problems\n'
+                    '6) Practical recommendations\n\n'
+                    f'Keep digest under {max_length} characters while maximizing information density.'
                 ),
             },
         ],

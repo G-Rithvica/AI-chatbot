@@ -39,6 +39,10 @@ type RequestOptions = Omit<RequestInit, 'body'> & {
   body?: BodyInit | Record<string, unknown> | null
 }
 
+type ApiErrorBody = {
+  detail?: string | Array<{ msg?: string; loc?: Array<string | number> }>
+}
+
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { body, headers, ...rest } = options
   const isJsonBody = body !== null && typeof body === 'object' && !(body instanceof FormData) && !(body instanceof URLSearchParams) && !(body instanceof Blob)
@@ -56,8 +60,15 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   if (!response.ok) {
     let detail = `Request failed with status ${response.status}`
     try {
-      const err = await response.json() as { detail?: string }
-      if (err.detail) detail = err.detail
+      const err = await response.json() as ApiErrorBody
+      if (typeof err.detail === 'string' && err.detail.trim()) {
+        detail = err.detail
+      } else if (Array.isArray(err.detail) && err.detail.length > 0) {
+        const first = err.detail[0]
+        const path = first.loc?.length ? first.loc.join('.') : 'request'
+        const message = first.msg ?? 'Validation failed'
+        detail = `${path}: ${message}`
+      }
     } catch { /* ignore parse errors */ }
     throw new Error(detail)
   }
