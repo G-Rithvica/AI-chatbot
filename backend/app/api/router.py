@@ -5,6 +5,7 @@ from app.api.routes.auth import router as auth_router
 from app.api.routes.chat import router as chat_router
 from app.api.routes.database_chat import router as database_chat_router
 from app.api.routes.image_generation import router as image_generation_router
+from app.api.routes.n8n import router as n8n_router
 from app.api.routes.threads import router as threads_router
 from next_projects.project6_image_generation.router import router as project6_router
 from next_projects.project7_rag.router import router as project7_router
@@ -21,6 +22,7 @@ api_router.include_router(threads_router, prefix='/threads', tags=['threads'])
 api_router.include_router(attachments_router, prefix='/attachments', tags=['attachments'])
 api_router.include_router(database_chat_router)
 api_router.include_router(image_generation_router, prefix='/image-generation', tags=['image-generation'])
+api_router.include_router(n8n_router)
 api_router.include_router(project6_router)
 api_router.include_router(project7_router)
 api_router.include_router(project8_router)

@@ -1,4 +1,5 @@
 import json
+import logging
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -9,9 +10,11 @@ from app.ai.chains import stream_chain_tokens
 from app.ai.memory import build_memory_window
 from app.core.config import get_settings
 from app.models.message import Message
+from app.models.n8n_webhook_event import N8nWebhookEvent
 from app.models.user import User
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 def _extract_forced_attachment_heading(attachment_context: str | None, prompt: str) -> str | None:
@@ -64,6 +67,8 @@ async def stream_chat_response(
     if not settings.llm_model:
         yield _sse_error('LLM_MODEL is not configured.')
         return
+
+    await _trigger_n8n_sidecar(db=db, user=user, prompt=prompt, thread_id=thread_id)
 
     prompt_for_storage = prompt
     if attachment_label:
@@ -142,3 +147,71 @@ def _sse_data(payload: dict[str, str]) -> str:
 
 def _sse_error(message: str) -> str:
     return _sse_data({'type': 'error', 'message': message})
+
+
+async def _trigger_n8n_sidecar(*, db: AsyncSession, user: User, prompt: str, thread_id: str | None) -> None:
+    """Trigger n8n webhook for each incoming user message.
+
+    This should never interrupt chat generation if n8n is down or misconfigured.
+    """
+    from app.services.n8n_service import N8nWebhookError, trigger_webhook
+
+    payload = {
+        'user_id': user.id,
+        'user_name': user.name or user.email,
+        'conversation_id': thread_id or '',
+        'message': prompt,
+    }
+
+    try:
+        result = await trigger_webhook(payload)
+        await _save_n8n_audit_event(
+            db=db,
+            user_id=user.id,
+            thread_id=thread_id,
+            conversation_id=payload['conversation_id'],
+            message=prompt,
+            status='success',
+            http_status=int(result.get('http_status')) if isinstance(result, dict) and result.get('http_status') else 200,
+            response_body=json.dumps(result) if isinstance(result, (dict, list)) else str(result),
+            error_message=None,
+        )
+    except N8nWebhookError as exc:
+        await _save_n8n_audit_event(
+            db=db,
+            user_id=user.id,
+            thread_id=thread_id,
+            conversation_id=payload['conversation_id'],
+            message=prompt,
+            status='failed',
+            http_status=None,
+            response_body=None,
+            error_message=str(exc),
+        )
+        logger.warning('n8n sidecar trigger skipped: %s', exc)
+
+
+async def _save_n8n_audit_event(
+    *,
+    db: AsyncSession,
+    user_id: str,
+    thread_id: str | None,
+    conversation_id: str,
+    message: str,
+    status: str,
+    http_status: int | None,
+    response_body: str | None,
+    error_message: str | None,
+) -> None:
+    event = N8nWebhookEvent(
+        user_id=user_id,
+        thread_id=thread_id,
+        conversation_id=conversation_id,
+        message=message,
+        status=status,
+        http_status=http_status,
+        response_body=response_body,
+        error_message=error_message,
+    )
+    db.add(event)
+    await db.commit()

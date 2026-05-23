@@ -18,7 +18,7 @@ def _load_env_file(path: Path) -> None:
             continue
 
         key, value = line.split('=', 1)
-        os.environ.setdefault(key.strip(), value.strip())
+        os.environ[key.strip()] = value.strip()
 
 
 _load_env_file(ENV_FILE)
@@ -55,6 +55,10 @@ class Settings(BaseSettings):
     accepted_upload_mime_types: list[str] = []
 
     frontend_url: str = 'http://localhost:5173'
+
+    n8n_webhook_url: str | None = None
+    n8n_api_key: str | None = None
+    n8n_status_webhook_url: str | None = None
 
     db_type: str | None = None
     db_host: str | None = None
